@@ -2,17 +2,18 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Cube Hero: Boss Rush 2026</title>
+    <title>Cube Hero: Boss Rush Apocalypse</title>
     <style>
-        body { margin: 0; background: #000; color: #00f2ff; font-family: 'Arial', sans-serif; overflow: hidden; }
+        body { margin: 0; background: #000; color: #00f2ff; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         canvas { display: block; }
-        #ui { position: absolute; top: 10px; left: 10px; pointer-events: none; text-shadow: 2px 2px #000; }
-        .bar { width: 250px; height: 15px; border: 1px solid #555; background: #111; margin: 5px 0; }
-        #hp-fill { background: #0f0; width: 100%; height: 100%; transition: 0.1s; }
-        #boss-hp-fill { background: #f0f; width: 100%; height: 100%; transition: 0.3s; }
-        #shop { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,25,0.95); border: 2px solid #00f2ff; padding: 25px; display: none; text-align: center; border-radius: 15px; }
-        button { background: #00f2ff; color: #000; border: none; padding: 10px 20px; margin: 5px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #fff; }
+        #ui { position: absolute; top: 15px; left: 15px; pointer-events: none; }
+        .bar { width: 250px; height: 18px; border: 2px solid #333; background: #111; margin: 5px 0; border-radius: 5px; overflow: hidden; }
+        #hp-fill { background: linear-gradient(90deg, #f00, #ff6666); width: 100%; height: 100%; transition: 0.1s; }
+        #boss-hp-fill { background: linear-gradient(90deg, #a0f, #f0f); width: 100%; height: 100%; transition: 0.3s; }
+        #shop { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,30,0.95); border: 3px solid #00f2ff; padding: 30px; display: none; text-align: center; border-radius: 20px; box-shadow: 0 0 40px #00f2ff; z-index: 100; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        button { background: #00f2ff; color: #000; border: none; padding: 12px; cursor: pointer; font-weight: bold; border-radius: 5px; }
+        button:hover { background: #fff; transform: scale(1.05); }
     </style>
 </head>
 <body>
@@ -20,13 +21,22 @@
 <div id="ui">
     HELD HP <div class="bar"><div id="hp-fill"></div></div>
     BOSS HP <div class="bar"><div id="boss-hp-fill"></div></div>
-    Gold: <span id="gold">0</span> | Level: <span id="lvl-txt">1/5</span>
+    <div style="background: rgba(0,0,0,0.5); padding: 5px; border-radius: 5px;">
+        Gold: <span id="gold">0</span> | Level: <span id="lvl-txt">1/5</span><br>
+        <small>F = Blitz | S = Spezial</small>
+    </div>
 </div>
 
 <div id="shop">
-    <h2 id="shop-title">BOSS ELIMINIERT!</h2>
-    <div id="shop-items"></div>
-    <button onclick="startNextLevel()">NÄCHSTES LEVEL</button>
+    <h2 id="shop-title">BOSS BESIEGT!</h2>
+    <div class="grid">
+        <button onclick="buy(2, 'Giftwurf', 80)">Slot 2: Gift (80G)</button>
+        <button onclick="buy(2, 'Meteor', 150)">Slot 2: Meteor (150G)</button>
+        <button onclick="buy(1, 'Eisstrahl', 100)">Slot 1: Eisstrahl (100G)</button>
+        <button onclick="buy(1, 'Flammen', 120)">Slot 1: Flammen (120G)</button>
+    </div>
+    <br>
+    <button onclick="startNextLevel()" style="width:100%; background: #0f0;">NÄCHSTES LEVEL STARTEN</button>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -39,50 +49,40 @@ canvas.height = window.innerHeight;
 
 let gold = 0, currentLvl = 0, gameState = "PLAY", camX = 0;
 let keys = {};
-let projectiles = [];
-let enemyProjectiles = [];
-let particles = [];
-let platforms = [];
+let projectiles = [], enemyProjectiles = [], platforms = [];
 
-const player = { x: 100, y: 500, w: 40, h: 40, vx: 0, vy: 0, hp: 100, speed: 7, jump: -16, grounded: false, slot1: 'Blitz', slot2: 'Keiner' };
+const player = { x: 100, y: 300, w: 45, h: 45, vx: 0, vy: 0, hp: 100, speed: 7, jump: -18, grounded: false, slot1: 'Blitz', slot2: 'Keiner', color: '#00f2ff' };
 
 const levels = [
-    { name: "Apokalypse-Stadt", color: "#1a1a1a", grav: 0.7, groundType: 'solid', 
-      boss: { x: 2800, y: 400, hp: 300, max: 300, type: 'Golem', atkType: 'rock' } },
-    { name: "Ozean des Grauens", color: "#001f3f", grav: 0.3, groundType: 'toxic', 
-      boss: { x: 3000, y: 300, hp: 500, max: 500, type: 'Leviathan', atkType: 'bubble' } },
-    { name: "Vulkan-Hölle", color: "#330000", grav: 0.8, groundType: 'lava', 
-      boss: { x: 3200, y: 400, hp: 800, max: 800, type: 'Demon', atkType: 'fire' } },
-    { name: "Sturm-Gipfel", color: "#222", grav: 0.6, groundType: 'solid', 
-      boss: { x: 3500, y: 200, hp: 1200, max: 1200, type: 'Vogel', atkType: 'wind' } },
-    { name: "Die Leere", color: "#0a001a", grav: 0.7, groundType: 'void', 
-      boss: { x: 4000, y: 300, hp: 2500, max: 2500, type: 'Omega', atkType: 'void' } }
+    { name: "Neon-Ruinen", color: "#111", grav: 0.8, ground: 'solid', boss: { x: 2800, y: 400, hp: 300, max: 300, type: 'Golem', atk: 'rock' } },
+    { name: "Ozean-Abgrund", color: "#001122", grav: 0.35, ground: 'toxic', boss: { x: 3000, y: 300, hp: 500, max: 500, type: 'Fish', atk: 'bubble' } },
+    { name: "Lava-Kammer", color: "#220000", grav: 0.9, ground: 'lava', boss: { x: 3200, y: 400, hp: 900, max: 900, type: 'Demon', atk: 'fire' } },
+    { name: "Wolken-Zitadelle", color: "#223", grav: 0.7, ground: 'solid', boss: { x: 3500, y: 200, hp: 1300, max: 1300, type: 'Bird', atk: 'wind' } },
+    { name: "Ende der Zeit", color: "#000", grav: 0.8, ground: 'void', boss: { x: 4200, y: 350, hp: 3000, max: 3000, type: 'Omega', atk: 'void' } }
 ];
 
 function setupLevel() {
     const lvl = levels[currentLvl];
     platforms = [
-        {x: 0, y: canvas.height-50, w: 5000, h: 50, type: lvl.groundType}, // Boden
-        {x: 600, y: 500, w: 200, h: 20}, {x: 1000, y: 400, w: 100, h: 20, special: 'tramp'},
-        {x: 1500, y: 300, w: 300, h: 20}, {x: 2000, y: 450, w: 200, h: 20, special: 'tramp'}
+        {x: 0, y: canvas.height-60, w: 6000, h: 60, type: lvl.ground}, 
+        {x: 700, y: 500, w: 200, h: 20}, {x: 1100, y: 350, w: 150, h: 20, special: 'tramp'},
+        {x: 1600, y: 450, w: 300, h: 20}, {x: 2100, y: 300, w: 200, h: 20, special: 'tramp'},
+        {x: 2400, y: 500, w: 400, h: 20}
     ];
-    player.x = 100; player.vx = 0; player.vy = 0;
+    player.x = 200; player.y = 300; player.vx = 0; player.vy = 0;
     projectiles = []; enemyProjectiles = [];
 }
 
 function drawLightning(x1, y1, x2, y2) {
-    ctx.strokeStyle = "#00f2ff";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(x1 - camX, y1);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x1 - camX, y1);
     let lx = x1, ly = y1;
-    for(let i=0; i<5; i++) {
-        lx += (x2 - x1)/5 + (Math.random()-0.5)*50;
-        ly += (y2 - y1)/5 + (Math.random()-0.5)*50;
+    for(let i=0; i<6; i++){
+        lx += (x2-x1)/6 + (Math.random()-0.5)*60;
+        ly += (y2-y1)/6 + (Math.random()-0.5)*60;
         ctx.lineTo(lx - camX, ly);
     }
-    ctx.lineTo(x2 - camX, y2);
-    ctx.stroke();
+    ctx.lineTo(x2 - camX, y2); ctx.stroke();
+    ctx.strokeStyle = "#00f2ff"; ctx.lineWidth = 2; ctx.stroke();
 }
 
 function update() {
@@ -90,82 +90,80 @@ function update() {
     const lvl = levels[currentLvl];
     const boss = lvl.boss;
 
-    // Movement & Physik
     if(keys['ArrowLeft'] || keys['KeyA']) player.vx = -player.speed;
     else if(keys['ArrowRight'] || keys['KeyD']) player.vx = player.speed;
-    else player.vx *= 0.8;
-    
-    player.vy += lvl.grav; player.x += player.vx; player.y += player.vy;
-    camX = player.x - 200;
+    else player.vx *= 0.85;
 
-    // Kollisionen
+    player.vy += lvl.grav; player.x += player.vx; player.y += player.vy;
+    camX = player.x - 300;
+
+    player.grounded = false;
     platforms.forEach(p => {
-        if(player.x < p.x + p.w && player.x + player.w > p.x && player.y + player.h > p.y && player.y < p.y + p.h && player.vy > 0) {
-            if(p.special === 'tramp') { player.vy = -25; }
+        if(player.x < p.x+p.w && player.x+player.w > p.x && player.y+player.h > p.y && player.y+player.h < p.y+30 && player.vy >= 0) {
+            if(p.special === 'tramp') { player.vy = -28; }
             else { player.y = p.y - player.h; player.vy = 0; player.grounded = true; }
-            if(p.type === 'lava' || p.type === 'toxic') player.hp -= 0.5;
+            if(p.type === 'lava' || p.type === 'toxic') player.hp -= 0.3;
         }
     });
 
-    // Boss KI Angriffe
-    if(Math.random() < 0.02 && Math.abs(player.x - boss.x) < 800) {
-        enemyProjectiles.push({x: boss.x, y: boss.y + 50, vx: -10, vy: (Math.random()-0.5)*5, type: boss.atkType});
+    if(Math.random() < 0.025 && Math.abs(player.x - boss.x) < 1000) {
+        enemyProjectiles.push({x: boss.x, y: boss.y + 50, vx: -12, vy: (Math.random()-0.5)*6, type: boss.atk});
     }
 
-    // Projektile Update
     projectiles.forEach((p, i) => {
-        p.x += 15;
-        if(Math.abs(p.x - boss.x) < 100) {
-            boss.hp -= 20; projectiles.splice(i, 1);
-            if(boss.hp <= 0) { gameState = "SHOP"; document.getElementById('shop').style.display = 'block'; gold += 200; }
+        p.x += 18;
+        if(Math.abs(p.x - boss.x) < 120 && Math.abs(p.y - boss.y) < 150) {
+            boss.hp -= 25; projectiles.splice(i, 1);
+            if(boss.hp <= 0) { gameState = "SHOP"; document.getElementById('shop').style.display = 'block'; gold += 250; }
         }
     });
 
     enemyProjectiles.forEach((p, i) => {
         p.x += p.vx; p.y += p.vy;
         if(Math.abs(p.x - player.x) < 40 && Math.abs(p.y - player.y) < 40) {
-            player.hp -= 10; enemyProjectiles.splice(i, 1);
+            player.hp -= 12; enemyProjectiles.splice(i, 1);
         }
     });
 
-    // UI
+    if(player.hp <= 0 || player.y > canvas.height + 500) { alert("Game Over!"); location.reload(); }
     document.getElementById('hp-fill').style.width = player.hp + "%";
     document.getElementById('boss-hp-fill').style.width = (boss.hp / boss.max * 100) + "%";
     document.getElementById('gold').innerText = gold;
+    document.getElementById('lvl-txt').innerText = (currentLvl+1) + "/5";
 }
 
 function draw() {
     const lvl = levels[currentLvl];
-    ctx.fillStyle = lvl.color;
-    ctx.fillRect(0,0, canvas.width, canvas.height);
+    ctx.fillStyle = lvl.color; ctx.fillRect(0,0, canvas.width, canvas.height);
 
-    // Plattformen zeichnen
     platforms.forEach(p => {
-        ctx.fillStyle = p.type === 'lava' ? '#f40' : (p.type === 'toxic' ? '#0f0' : '#444');
-        if(p.special === 'tramp') ctx.fillStyle = 'yellow';
+        ctx.fillStyle = p.type === 'lava' ? '#f50' : (p.type === 'toxic' ? '#0f0' : '#333');
+        if(p.special === 'tramp') ctx.fillStyle = '#ff0';
         ctx.fillRect(p.x - camX, p.y, p.w, p.h);
+        ctx.strokeStyle = "#fff"; ctx.globalAlpha = 0.2; ctx.strokeRect(p.x - camX, p.y, p.w, p.h); ctx.globalAlpha = 1;
     });
 
-    // Boss zeichnen
-    ctx.save();
-    ctx.translate(lvl.boss.x - camX, lvl.boss.y);
-    ctx.fillStyle = "purple";
-    if(lvl.boss.type === 'Golem') ctx.fillRect(0,0, 100, 150);
-    if(lvl.boss.type === 'Leviathan') { ctx.beginPath(); ctx.arc(50, 50, 60, 0, Math.PI*2); ctx.fill(); }
-    if(lvl.boss.type === 'Demon') { ctx.beginPath(); ctx.moveTo(0,100); ctx.lineTo(50,0); ctx.lineTo(100,100); ctx.fill(); }
+    // Boss Drawing
+    ctx.save(); ctx.translate(lvl.boss.x - camX, lvl.boss.y);
+    const s = Math.sin(Date.now()*0.005)*15;
+    ctx.fillStyle = "purple"; ctx.shadowBlur = 20; ctx.shadowColor = "magenta";
+    if(lvl.boss.type === 'Golem') ctx.fillRect(0, s, 120, 180);
+    if(lvl.boss.type === 'Fish') { ctx.beginPath(); ctx.ellipse(60, 60+s, 90, 50, 0, 0, Math.PI*2); ctx.fill(); }
+    if(lvl.boss.type === 'Demon') { ctx.beginPath(); ctx.moveTo(0,150+s); ctx.lineTo(60,s); ctx.lineTo(120,150+s); ctx.fill(); }
+    if(lvl.boss.type === 'Bird') { ctx.fillRect(0, s, 100, 30); ctx.fillRect(20, -40+s, 60, 100); }
+    if(lvl.boss.type === 'Omega') { ctx.lineWidth = 5; ctx.strokeStyle = "white"; ctx.strokeRect(-20, -20+s, 160, 220); ctx.fillRect(0,s, 120, 180); }
     ctx.restore();
 
-    // Player & Attacken
-    ctx.fillStyle = "#00f2ff";
-    ctx.fillRect(player.x - camX, player.y, player.w, player.h);
+    ctx.fillStyle = player.color; ctx.shadowBlur = 15; ctx.shadowColor = player.color;
+    ctx.fillRect(player.x - camX, player.y, player.w, player.h); ctx.shadowBlur = 0;
 
     projectiles.forEach(p => {
-        if(player.slot1 === 'Blitz') drawLightning(p.x - 50, p.y + 20, p.x, p.y + 20);
-        else { ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(p.x - camX, p.y, 10, 0, Math.PI*2); ctx.fill(); }
+        if(p.type === 'Blitz') drawLightning(player.x+20, player.y+20, p.x+100, p.y+20);
+        else { ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(p.x - camX, p.y, 12, 0, Math.PI*2); ctx.fill(); }
     });
 
     enemyProjectiles.forEach(p => {
-        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(p.x - camX, p.y, 15, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x - camX, p.y, 15, 0, Math.PI*2); ctx.fill();
     });
 
     requestAnimationFrame(() => { update(); draw(); });
@@ -173,15 +171,24 @@ function draw() {
 
 window.onkeydown = (e) => {
     keys[e.code] = true;
-    if(e.code === 'Space') projectiles.push({x: player.x, y: player.y, type: player.slot1});
+    if((e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') && (player.grounded || Math.abs(player.vy) < 1)) {
+        player.vy = player.jump; player.grounded = false;
+    }
+    if(e.code === 'KeyF' || e.code === 'KeyE') projectiles.push({x: player.x, y: player.y+20, type: player.slot1});
+    if(e.code === 'KeyS' || e.code === 'ArrowDown') {
+        if(player.slot2 !== 'Keiner') projectiles.push({x: player.x, y: player.y+20, type: player.slot2});
+    }
 };
 window.onkeyup = (e) => keys[e.code] = false;
 
+function buy(slot, name, cost) {
+    if(gold >= cost) { gold -= cost; if(slot === 1) player.slot1 = name; else player.slot2 = name; alert(name + " gekauft!"); }
+}
+
 function startNextLevel() {
-    currentLvl++;
+    currentLvl = Math.min(currentLvl + 1, levels.length - 1);
     document.getElementById('shop').style.display = 'none';
-    gameState = "PLAY";
-    setupLevel();
+    gameState = "PLAY"; setupLevel();
 }
 
 setupLevel();
